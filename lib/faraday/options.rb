@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Faraday
   # Subclasses Struct with some special helpers for converting from a Hash to
   # a Struct.
@@ -8,31 +10,30 @@ module Faraday
     end
 
     # Public
-    def each(&block)
+    def each
+      return to_enum(:each) unless block_given?
+
       members.each do |key|
-        block.call key.to_sym, send(key)
+        yield(key.to_sym, send(key))
       end
     end
 
     # Public
     def update(obj)
       obj.each do |key, value|
-        if sub_options = self.class.options_for(key)
-          value = sub_options.from(value) if value
-        elsif Hash === value
-          hash = {}
-          value.each do |hash_key, hash_value|
-            hash[hash_key] = hash_value
-          end
-          value = hash
+        sub_options = self.class.options_for(key)
+        if sub_options
+          new_value = sub_options.from(value) if value
+        elsif value.is_a?(Hash)
+          new_value = value.dup
+        else
+          new_value = value
         end
 
-        self.send("#{key}=", value) unless value.nil?
+        send("#{key}=", new_value) unless new_value.nil?
       end
       self
     end
-
-    alias merge! update
 
     # Public
     def delete(key)
@@ -42,14 +43,48 @@ module Faraday
     end
 
     # Public
-    def merge(value)
-      dup.update(value)
+    def clear
+      members.each { |member| delete(member) }
     end
 
     # Public
-    def fetch(key, default = nil)
-      send(key) || send("#{key}=", default ||
-        (block_given? ? Proc.new.call : nil))
+    def merge!(other)
+      other.each do |key, other_value|
+        self_value = send(key)
+        sub_options = self.class.options_for(key)
+        new_value = if self_value && sub_options && other_value
+                      self_value.merge(other_value)
+                    else
+                      other_value
+                    end
+        send("#{key}=", new_value) unless new_value.nil?
+      end
+      self
+    end
+
+    # Public
+    def merge(other)
+      dup.merge!(other)
+    end
+
+    # Public
+    def deep_dup
+      self.class.from(self)
+    end
+
+    # Public
+    def fetch(key, *args)
+      unless symbolized_key_set.include?(key.to_sym)
+        key_setter = "#{key}="
+        if !args.empty?
+          send(key_setter, args.first)
+        elsif block_given?
+          send(key_setter, yield(key))
+        else
+          raise self.class.fetch_error_class, "key not found: #{key.inspect}"
+        end
+      end
+      send(key)
     end
 
     # Public
@@ -59,8 +94,45 @@ module Faraday
 
     # Public
     def keys
-      members.reject { |m| send(m).nil? }
+      members.reject { |member| send(member).nil? }
     end
+
+    # Public
+    def empty?
+      keys.empty?
+    end
+
+    # Public
+    def each_key
+      return to_enum(:each_key) unless block_given?
+
+      keys.each do |key|
+        yield(key)
+      end
+    end
+
+    # Public
+    def key?(key)
+      keys.include?(key)
+    end
+
+    alias has_key? key?
+
+    # Public
+    def each_value
+      return to_enum(:each_value) unless block_given?
+
+      values.each do |value|
+        yield(value)
+      end
+    end
+
+    # Public
+    def value?(value)
+      values.include?(value)
+    end
+
+    alias has_value? value?
 
     # Public
     def to_hash
@@ -75,13 +147,13 @@ module Faraday
     # Internal
     def inspect
       values = []
-      members.each do |m|
-        value = send(m)
-        values << "#{m}=#{value.inspect}" if value
+      members.each do |member|
+        value = send(member)
+        values << "#{member}=#{value.inspect}" if value
       end
-      values = values.empty? ? ' (empty)' : (' ' << values.join(", "))
+      values = values.empty? ? '(empty)' : values.join(', ')
 
-      %(#<#{self.class}#{values}>)
+      %(#<#{self.class} #{values}>)
     end
 
     # Internal
@@ -98,117 +170,53 @@ module Faraday
     def self.attribute_options
       @attribute_options ||= {}
     end
-  end
 
-  class RequestOptions < Options.new(:params_encoder, :proxy, :bind,
-    :timeout, :open_timeout, :boundary,
-    :oauth)
+    def self.memoized(key, &block)
+      unless block_given?
+        raise ArgumentError, '#memoized must be called with a block'
+      end
 
-    def []=(key, value)
-      if key && key.to_sym == :proxy
-        super(key, value ? ProxyOptions.from(value) : nil)
+      memoized_attributes[key.to_sym] = block
+      class_eval <<-RUBY, __FILE__, __LINE__ + 1
+        def #{key}() self[:#{key}]; end
+      RUBY
+    end
+
+    def self.memoized_attributes
+      @memoized_attributes ||= {}
+    end
+
+    def [](key)
+      key = key.to_sym
+      if (method = self.class.memoized_attributes[key])
+        super(key) || (self[key] = instance_eval(&method))
       else
-        super(key, value)
+        super
       end
     end
-  end
 
-  class SSLOptions < Options.new(:verify, :ca_file, :ca_path, :verify_mode,
-    :cert_store, :client_cert, :client_key, :verify_depth, :version)
-
-    def verify?
-      verify != false
+    def symbolized_key_set
+      @symbolized_key_set ||= Set.new(keys.map(&:to_sym))
     end
 
-    def disable?
-      !verify?
-    end
-  end
-
-  class ProxyOptions < Options.new(:uri, :user, :password)
-    extend Forwardable
-    def_delegators :uri, :scheme, :scheme=, :host, :host=, :port, :port=, :path, :path=
-
-    def self.from(value)
-      case value
-      when String then value = {:uri => Utils.URI(value)}
-      when URI then value = {:uri => value}
-      when Hash, Options
-        if uri = value.delete(:uri)
-          value[:uri] = Utils.URI(uri)
-        end
-      end
-      super(value)
+    def self.inherited(subclass)
+      super
+      subclass.attribute_options.update(attribute_options)
+      subclass.memoized_attributes.update(memoized_attributes)
     end
 
-    def user
-      self[:user] ||= Utils.unescape(uri.user)
-    end
-
-    def password
-      self[:password] ||= Utils.unescape(uri.password)
-    end
-  end
-
-  class ConnectionOptions < Options.new(:request, :proxy, :ssl, :builder, :url,
-    :parallel_manager, :params, :headers, :builder_class)
-
-    options :request => RequestOptions, :ssl => SSLOptions
-
-    def request
-      self[:request] ||= self.class.options_for(:request).new
-    end
-
-    def ssl
-      self[:ssl] ||= self.class.options_for(:ssl).new
-    end
-
-    def builder_class
-      self[:builder_class] ||= RackBuilder
-    end
-
-    def new_builder(block)
-      builder_class.new(&block)
-    end
-  end
-
-  class Env < Options.new(:method, :body, :url, :request, :request_headers,
-    :ssl, :parallel_manager, :params, :response, :response_headers, :status)
-
-    ContentLength = 'Content-Length'.freeze
-    StatusesWithoutBody = Set.new [204, 304]
-    SuccessfulStatuses = 200..299
-
-    # A Set of HTTP verbs that typically send a body.  If no body is set for
-    # these requests, the Content-Length header is set to 0.
-    MethodsWithBodies = Set.new [:post, :put, :patch, :options]
-
-    options :request => RequestOptions,
-      :request_headers => Utils::Headers, :response_headers => Utils::Headers
-
-    extend Forwardable
-
-    def_delegators :request, :params_encoder
-
-    def success?
-      SuccessfulStatuses.include?(status)
-    end
-
-    def needs_body?
-      !body && MethodsWithBodies.include?(method)
-    end
-
-    def clear_body
-      request_headers[ContentLength] = '0'
-      self.body = ''
-    end
-
-    def parse_body?
-      !StatusesWithoutBody.include?(status)
-    end
-
-    def parallel?
-      !!parallel_manager
+    def self.fetch_error_class
+      @fetch_error_class ||= if Object.const_defined?(:KeyError)
+                               ::KeyError
+                             else
+                               ::IndexError
+                             end
     end
   end
 end
+
+require 'faraday/options/request_options'
+require 'faraday/options/ssl_options'
+require 'faraday/options/proxy_options'
+require 'faraday/options/connection_options'
+require 'faraday/options/env'

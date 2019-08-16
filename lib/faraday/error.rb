@@ -1,22 +1,22 @@
+# frozen_string_literal: true
+
 module Faraday
-  class Error < StandardError; end
-  class MissingDependency < Error; end
+  # Faraday error base class.
+  class Error < StandardError
+    attr_reader :response, :wrapped_exception
 
-  class ClientError < Error
-    attr_reader :response
-
-    def initialize(ex, response = nil)
+    def initialize(exc, response = nil)
       @wrapped_exception = nil
       @response = response
 
-      if ex.respond_to?(:backtrace)
-        super(ex.message)
-        @wrapped_exception = ex
-      elsif ex.respond_to?(:each_key)
-        super("the server responded with status #{ex[:status]}")
-        @response = ex
+      if exc.respond_to?(:backtrace)
+        super(exc.message)
+        @wrapped_exception = exc
+      elsif exc.respond_to?(:each_key)
+        super("the server responded with status #{exc[:status]}")
+        @response = exc
       else
-        super(ex.to_s)
+        super(exc.to_s)
       end
     end
 
@@ -29,18 +29,72 @@ module Faraday
     end
 
     def inspect
-      %(#<#{self.class}>)
+      inner = +''
+      inner << " wrapped=#{@wrapped_exception.inspect}" if @wrapped_exception
+      inner << " response=#{@response.inspect}" if @response
+      inner << " #{super}" if inner.empty?
+      %(#<#{self.class}#{inner}>)
     end
   end
 
-  class ConnectionFailed < ClientError;   end
-  class ResourceNotFound < ClientError;   end
-  class UnprocessableEntity < ClientError;   end
-  class ParsingError     < ClientError;   end
-  class TimeoutError < ClientError; end
+  # Faraday client error class. Represents 4xx status responses.
+  class ClientError < Error
+  end
 
-  [:MissingDependency, :ClientError, :ConnectionFailed, :ResourceNotFound,
-   :ParsingError, :TimeoutError, :UnprocessableEntity].each do |const|
-    Error.const_set(const, Faraday.const_get(const))
+  # Raised by Faraday::Response::RaiseError in case of a 400 response.
+  class BadRequestError < ClientError
+  end
+
+  # Raised by Faraday::Response::RaiseError in case of a 401 response.
+  class UnauthorizedError < ClientError
+  end
+
+  # Raised by Faraday::Response::RaiseError in case of a 403 response.
+  class ForbiddenError < ClientError
+  end
+
+  # Raised by Faraday::Response::RaiseError in case of a 404 response.
+  class ResourceNotFound < ClientError
+  end
+
+  # Raised by Faraday::Response::RaiseError in case of a 407 response.
+  class ProxyAuthError < ClientError
+  end
+
+  # Raised by Faraday::Response::RaiseError in case of a 409 response.
+  class ConflictError < ClientError
+  end
+
+  # Raised by Faraday::Response::RaiseError in case of a 422 response.
+  class UnprocessableEntityError < ClientError
+  end
+
+  # Faraday server error class. Represents 5xx status responses.
+  class ServerError < Error
+  end
+
+  # A unified client error for timeouts.
+  class TimeoutError < ServerError
+    def initialize(exc = 'timeout', response = nil)
+      super(exc, response)
+    end
+  end
+
+  # A unified error for failed connections.
+  class ConnectionFailed < Error
+  end
+
+  # A unified client error for SSL errors.
+  class SSLError < Error
+  end
+
+  # Raised by FaradayMiddleware::ResponseMiddleware
+  class ParsingError < Error
+  end
+
+  # Exception used to control the Retry middleware.
+  #
+  # @see Faraday::Request::Retry
+  class RetriableResponse < Error
   end
 end

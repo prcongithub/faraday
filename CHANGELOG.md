@@ -1,5 +1,12 @@
 # Faraday Changelog
 
+For newer changes, please see https://github.com/lostisland/faraday/releases
+
+## v0.9.1
+
+* Refactor Net:HTTP adapter so that with_net_http_connection can be overridden to allow pooled connections. (@Ben-M)
+* Add configurable methods that bypass `retry_if` in the Retry request middleware.  (@mike-bourgeous)
+
 ## v0.9.0
 
 * Add HTTPClient adapter (@hakanensari)

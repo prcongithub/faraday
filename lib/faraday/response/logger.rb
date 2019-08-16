@@ -1,34 +1,33 @@
+# frozen_string_literal: true
+
 require 'forwardable'
+require 'faraday/logging/formatter'
 
 module Faraday
-  class Response::Logger < Response::Middleware
-    extend Forwardable
-
-    def initialize(app, logger = nil)
-      super(app)
-      @logger = logger || begin
-        require 'logger'
-        ::Logger.new(STDOUT)
+  class Response
+    # Logger is a middleware that logs internal events in the HTTP request
+    # lifecycle to a given Logger object. By default, this logs to STDOUT. See
+    # Faraday::Logging::Formatter to see specifically what is logged.
+    class Logger < Middleware
+      def initialize(app, logger = nil, options = {})
+        super(app)
+        logger ||= begin
+          require 'logger'
+          ::Logger.new($stdout)
+        end
+        formatter_class = options.delete(:formatter) || Logging::Formatter
+        @formatter = formatter_class.new(logger: logger, options: options)
+        yield @formatter if block_given?
       end
-    end
 
-    def_delegators :@logger, :debug, :info, :warn, :error, :fatal
+      def call(env)
+        @formatter.request(env)
+        super
+      end
 
-    def call(env)
-      info "#{env.method} #{env.url.to_s}"
-      debug('request') { dump_headers env.request_headers }
-      super
-    end
-
-    def on_complete(env)
-      info('Status') { env.status.to_s }
-      debug('response') { dump_headers env.response_headers }
-    end
-
-    private
-
-    def dump_headers(headers)
-      headers.map { |k, v| "#{k}: #{v.inspect}" }.join("\n")
+      def on_complete(env)
+        @formatter.response(env)
+      end
     end
   end
 end
