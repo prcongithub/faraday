@@ -6,14 +6,18 @@ log
 pkg/*
 tmp
 .rvmrc
-.rbenv*
+.ruby-version
+.yardoc
 
 ## BUNDLER
-bin
 *.gem
 .bundle
 Gemfile.lock
-/bundle
+vendor/bundle
 
 ## PROJECT::SPECIFIC
 .rbx
+
+## IDEs
+.idea/
+.yardoc/
