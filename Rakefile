@@ -1,8 +1,7 @@
-require 'rake/testtask'
+# frozen_string_literal: true
 
-task :default => :test
+require 'rspec/core/rake_task'
 
-desc "Run all tests"
-task :test do
-  exec 'script/test'
-end
+RSpec::Core::RakeTask.new(:spec)
+
+task default: :spec

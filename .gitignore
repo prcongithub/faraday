@@ -7,9 +7,9 @@ pkg/*
 tmp
 .rvmrc
 .ruby-version
+.yardoc
 
 ## BUNDLER
-bin
 *.gem
 .bundle
 Gemfile.lock
@@ -20,3 +20,4 @@ vendor/bundle
 
 ## IDEs
 .idea/
+.yardoc/

@@ -1,52 +1,83 @@
 ## Contributing
 
-You can run the test suite against a live server by running `script/test`. It
-automatically starts a test server in background. Only tests in
-`test/adapters/*_test.rb` require a server, though.
+In Faraday we always welcome new ideas and features, however we also have to ensure
+that the overall code quality stays on reasonable levels.
+For this reason, before adding any contribution to Faraday, we highly recommend reading this
+quick guide to ensure your PR can be reviewed and approved as quickly as possible.
 
-``` sh
-# setup development dependencies
-$ script/bootstrap
+We are past our 1.0 release, and follow [Semantic Versioning][semver]. If your
+patch includes changes that break compatibility, note that so we can add it to
+the [Changelog][].
 
-# run the whole suite
-$ script/test
 
-# run only specific files
-$ script/test excon patron
+### Required Checks
 
-# run tests using SSL
-$ SSL=yes script/test
+Before pushing your code and opening a PR, we recommend you run the following checks to avoid
+our GitHub Actions Workflow to block your contribution.
+
+```bash
+# Run unit tests and check code coverage
+$ bundle exec rspec
+
+# Run Rubocop and check code style
+$ bundle exec rubocop
 ```
+
 
 ### New Features
 
-When adding a feature Faraday:
+When adding a feature in Faraday:
 
 1. also add tests to cover your new feature.
 2. if the feature is for an adapter, the **attempt** must be made to add the same feature to all other adapters as well.
-3. start opening an issue describing how the new feature will work, and only after receiving the green light by the core team start working on the PR.
-
-### New Middlewares
-
-We will accept middleware that:
-
-1. is useful to a broader audience, but can be implemented relatively
-   simple; and
-2. which isn't already present in [faraday_middleware][] project.
+3. start opening an issue describing how the new feature will work, and only after receiving
+the green light by the core team start working on the PR.
 
 
-### New Adapters
+### New Middleware & Adapters
 
-We will accept adapters that:
+We prefer new adapters and middlewares to be added as separate gems. We can link to such gems from this project.
+
+This goes for the [faraday_middleware][] project as well.
+
+We encourage adapters that:
 
 1. support SSL & streaming;
 1. are proven and may have better performance than existing ones; or
-2. if they have features not present in included adapters.
+1. have features not present in included adapters.
 
-We are pushing towards a 1.0 release, when we will have to follow [Semantic
-Versioning][semver].  If your patch includes changes to break compatibility,
-note that so we can add it to the [Changelog][].
+### Changes to Faraday Website
 
-[semver]:    http://semver.org/
-[changelog]: https://github.com/lostisland/faraday/releases
-[faraday_middleware]: https://github.com/lostisland/faraday_middleware/wiki
+The [Faraday Website][website] is included in the Faraday repository, under the `/docs` folder.
+If you want to apply changes to it, please test it locally before opening your PR.
+
+#### Test website changes using Docker
+
+Start cloning the repository and navigate to the newly cloned directory on your computer, then run the following:
+
+```bash
+docker container run -p 80:4000 -v $(pwd)/docs:/site bretfisher/jekyll-serve
+```
+
+And that's it! Open your browser and go to `http://localhost` to see the website running.
+Any change done to files in the `/docs` folder will be automatically picked (except for config changes).
+
+#### Test website changes using `Jekyll`
+
+```bash
+# Navigate into the /docs folder
+$ cd docs
+
+# Install Jekyll dependencies, this bundle is different from Faraday's one.
+$ bundle install
+
+# Run the Jekyll server with the Faraday website
+$ bundle exec jekyll serve
+
+# The site will now be reachable at http://127.0.0.1:4000/faraday/
+```
+
+[semver]:               https://semver.org/
+[changelog]:            https://github.com/lostisland/faraday/releases
+[faraday_middleware]:   https://github.com/lostisland/faraday_middleware
+[website]:              https://lostisland.github.io/faraday
